@@ -33,6 +33,7 @@
 #include "simulate.h"
 #include "array_safety.h"
 #include "unitree_sdk2_bridge.h"
+#include "unitree_legged_bridge.h"
 #include "param.h"
 
 #define MUJOCO_PLUGIN_DIR "mujoco_plugin"
@@ -584,15 +585,23 @@ void *UnitreeSdk2BridgeThread(void *arg)
     usleep(500000);
   }
 
-  unitree::robot::ChannelFactory::Instance()->Init(param::config.domain_id, param::config.interface);
+  const std::string &robot = param::config.robot;
+  if (robot == "aliengo") {
+    unitree_legged_bridge::UnitreeLeggedBridge bridge(m, d);
+    bridge.start();
+    while (true) {
+      sleep(1);
+    }
+  }
 
+  unitree::robot::ChannelFactory::Instance()->Init(param::config.domain_id, param::config.interface);
 
   int body_id = mj_name2id(m, mjOBJ_BODY, "torso_link");
   if (body_id < 0) {
     body_id = mj_name2id(m, mjOBJ_BODY, "base_link");
   }
   param::config.band_attached_link = 6 * body_id;
-  
+
   std::unique_ptr<UnitreeSDK2BridgeBase> interface = nullptr;
   if (m->nu > NUM_MOTOR_IDL_GO) {
     interface = std::make_unique<G1Bridge>(m, d);
@@ -600,9 +609,8 @@ void *UnitreeSdk2BridgeThread(void *arg)
     interface = std::make_unique<Go2Bridge>(m, d);
   }
   interface->start();
-  
-  while (true)
-  {
+
+  while (true) {
     sleep(1);
   }
 }

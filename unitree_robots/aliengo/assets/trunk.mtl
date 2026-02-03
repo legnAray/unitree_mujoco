@@ -1,0 +1,4 @@
+newmtl trunk
+map_Kd trunk_uv_base_final.png
+illum 1
+

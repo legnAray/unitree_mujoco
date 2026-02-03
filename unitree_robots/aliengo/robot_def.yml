@@ -1,0 +1,8 @@
+robot_name: "aliengo"
+model_path: "aliengo/aliengo"
+base_name: "base"
+leg_prefixes: [ "FR_", "FL_", "RR_", "RL_" ]
+leg_joints: [ "hip", "thigh", "calf" ]
+foot_link_name: "foot"
+joint_pos0: [ 0., 0.6435, -1.287, 0., 0.6435, -1.287,
+              0., 0.6435, -1.287, 0., 0.6435, -1.287 ]
