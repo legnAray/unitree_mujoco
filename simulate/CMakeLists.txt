@@ -13,24 +13,6 @@ list(APPEND CMAKE_PREFIX_PATH "/opt/unitree_robotics/lib/cmake")
 find_package(unitree_sdk2 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS program_options)
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-  set(UNITREE_LEGGED_SDK_ARCH "amd64")
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-  set(UNITREE_LEGGED_SDK_ARCH "arm64")
-else()
-  message(WARNING "Unsupported architecture '${CMAKE_SYSTEM_PROCESSOR}' for unitree_legged_sdk.")
-endif()
-
-set(UNITREE_LEGGED_SDK_HOME "${CMAKE_SOURCE_DIR}/../../stepit/extern/robot_sdk/unitree_aliengo_sdk")
-if (EXISTS "${UNITREE_LEGGED_SDK_HOME}/include")
-  include_directories(${UNITREE_LEGGED_SDK_HOME}/include)
-  if (UNITREE_LEGGED_SDK_ARCH)
-    link_directories(${UNITREE_LEGGED_SDK_HOME}/lib/cpp/${UNITREE_LEGGED_SDK_ARCH})
-    list(APPEND CMAKE_BUILD_RPATH "${UNITREE_LEGGED_SDK_HOME}/lib/cpp/${UNITREE_LEGGED_SDK_ARCH}")
-  endif()
-endif()
-
-
 include_directories(
   mujoco/include
   mujoco/simulate
@@ -40,7 +22,6 @@ link_directories(mujoco/lib)
 
 file(GLOB SIM_SRC
   src/joystick/joystick.cc
-  src/unitree_legged_bridge.cc
 
   # exclude mujoco/simulate/main.cc
   mujoco/simulate/glfw_*.cc
@@ -55,7 +36,6 @@ link_libraries(
   glfw
   yaml-cpp
   unitree_sdk2
-  unitree_legged_sdk
   boost_program_options
   fmt
 )

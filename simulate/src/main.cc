@@ -33,7 +33,6 @@
 #include "simulate.h"
 #include "array_safety.h"
 #include "unitree_sdk2_bridge.h"
-#include "unitree_legged_bridge.h"
 #include "param.h"
 
 #define MUJOCO_PLUGIN_DIR "mujoco_plugin"
@@ -586,14 +585,6 @@ void *UnitreeSdk2BridgeThread(void *arg)
   }
 
   const std::string &robot = param::config.robot;
-  if (robot == "aliengo") {
-    unitree_legged_bridge::UnitreeLeggedBridge bridge(m, d);
-    bridge.start();
-    while (true) {
-      sleep(1);
-    }
-  }
-
   unitree::robot::ChannelFactory::Instance()->Init(param::config.domain_id, param::config.interface);
 
   int body_id = mj_name2id(m, mjOBJ_BODY, "torso_link");
