@@ -1,9 +1,12 @@
 <mujoco model="aliengo">
   <compiler angle="radian" meshdir="assets" texturedir="assets"/>
 
+  <option cone="elliptic" impratio="100" />
+
   <default>
     <default class="aliengo">
       <geom condim="1" friction="0.6" margin="0.001" group="3"/>
+      <joint damping="0.1" armature="0.01"/>
       <default class="foot">
         <geom pos="0 0 -0.25" size="0.0265" priority="1" solimp="0.1 1 0.01"
               condim="6" friction="0.8 0.02 0.01"/>
