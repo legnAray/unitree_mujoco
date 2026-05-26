@@ -1,0 +1,200 @@
+#include "ray_caster_plugin.h"
+#include <mujoco/mujoco.h>
+#include "ray_plugin.h"
+#include "RayCaster.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include <mujoco/mjdata.h>
+#include <mujoco/mjmodel.h>
+#include <mujoco/mjplugin.h>
+#include <mujoco/mjtnum.h>
+#include <mujoco/mjvisualize.h>
+#include <mujoco/mujoco.h>
+
+namespace mujoco::plugin::sensor {
+// Creates a RayCasterPlugin instance if all config attributes are defined and
+// within their allowed bounds.
+RayCasterPlugin *RayCasterPlugin::Create(const mjModel *m, mjData *d,
+                                         int instance) {
+
+  return new RayCasterPlugin(m, d, instance);
+}
+
+RayCasterPlugin::RayCasterPlugin(const mjModel *m, mjData *d, int instance) {
+  cfg = RayCasterCfg();
+  
+  // First, get sensor_id before creating RayCaster
+  int id;
+  for (id = 0; id < m->nsensor; ++id) {
+    if (m->sensor_type[id] == mjSENS_PLUGIN &&
+        m->sensor_plugin[id] == instance) {
+      break;
+    }
+  }
+  sensor_id = id;
+  name = std::string(m->names + m->name_sensoradr[sensor_id]);
+
+  auto resolution =
+      ReadVector<double>(mj_getPluginConfig(m, instance, ray_attributes[0]));
+  if (resolution.size() == 1)
+    cfg.resolution = resolution[0];
+  else if (resolution.empty())
+    cfg.resolution = 0.1;
+  else
+    mju_error("RayCasterPlugin: resolution must be 1");
+
+  auto size =
+      ReadVector<double>(mj_getPluginConfig(m, instance, ray_attributes[1]));
+  if (size.size() == 2)
+    cfg.size = {size[0], size[1]};
+  else if (size.empty())
+    cfg.size = {1.0, 1.0};
+  else
+    mju_error("RayCasterPlugin: size must be 2");
+
+  auto dis_range =
+      ReadVector<double>(mj_getPluginConfig(m, instance, ray_attributes[2]));
+  if (dis_range.size() == 2)
+    cfg.dis_range = {dis_range[0], dis_range[1]};
+  else if (dis_range.empty())
+    cfg.dis_range = {0.001, 1e6};
+  else
+    mju_error("RayCasterPlugin: dis_range must be 2");
+
+  std::string type = mj_getPluginConfig(m, instance, ray_attributes[3]);
+  if (type == "base") {
+    cfg.type = RayCasterType::base;
+  } else if (type == "yaw") {
+    cfg.type = RayCasterType::yaw;
+  } else if (type == "world") {
+    cfg.type = RayCasterType::world;
+  } else {
+    mju_error("RayCasterPlugin: type must be base, yaw or world");
+  }
+
+  // Parse iteration_order (optional, default is "height_width")
+  std::string iteration_order = mj_getPluginConfig(m, instance, ray_attributes[4]);
+  if (iteration_order.empty()) {
+    cfg.iteration_order = "height_width";  // default
+  } else if (iteration_order == "height_width" || iteration_order == "width_height") {
+    cfg.iteration_order = iteration_order;
+  } else {
+    mju_error("RayCasterPlugin: iteration_order must be 'height_width' or 'width_height'");
+  }
+
+  std::string cam_name =
+      std::string(mj_id2name(m, mjOBJ_CAMERA, m->sensor_objid[sensor_id]));
+  cfg.cam_name = cam_name;
+  cfg.m = m;
+  cfg.d = d;
+  ray_caster = new RayCaster(cfg);
+  
+  // Now call getBaseCfg to set geomgroup and other configs AFTER ray_caster is created
+  getBaseCfg(m, d, instance);
+  
+  // Apply geomgroup configuration
+  auto geomgroup_config =
+      ReadVector<bool>(mj_getPluginConfig(m, instance, "geomgroup"));
+  if (geomgroup_config.size() > 0 && geomgroup_config.size() <= 6) {
+    for (int i = 0; i < geomgroup_config.size(); i++) {
+      ray_caster->geomgroup[i] = geomgroup_config[i];
+    }
+    for (int i = geomgroup_config.size(); i < 6; i++) {
+      ray_caster->geomgroup[i] = 0;
+    }
+  }
+  
+  initSensor(m, d, instance, ray_caster->nray);
+}
+
+void RayCasterPlugin::RegisterPlugin() {
+  mjpPlugin plugin;
+  mjp_defaultPlugin(&plugin);
+
+  plugin.name = "mujoco.sensor.ray_caster";
+  plugin.capabilityflags |= mjPLUGIN_SENSOR;
+
+  auto data = concat_arrays(ray_attributes);
+  plugin.nattribute = data.size();
+  plugin.attributes = data.data();
+
+  // Stateless.
+  plugin.nstate = +[](const mjModel *m, int instance) {
+    // size + n_data_size
+    auto sensor_data_types =
+        ReadStringVector(mj_getPluginConfig(m, instance, "sensor_data_types"));
+    int n_state = 2 + sensor_data_types.size() * 2;
+    return n_state;
+  };
+
+  // Sensor dimension = nchannel * size[0] * size[1]
+  plugin.nsensordata = +[](const mjModel *m, int instance, int sensor_id) {
+    auto size = ReadVector<double>(mj_getPluginConfig(m, instance, "size"), 2);
+    auto resolution =
+        ReadVector<double>(mj_getPluginConfig(m, instance, "resolution"), 1);
+    if (size[0] <= 0 || size[1] <= 0 || resolution[0] <= 0)
+      mju_error("RayCasterPlugin: size and resolution must be positive");
+
+    int nray = (static_cast<int>(std::round(size[0] / resolution[0])) + 1) *
+               (static_cast<int>(std::round(size[1] / resolution[0])) + 1);
+    int n_data = computeDateSize(m, instance, nray);
+    return n_data;
+  };
+
+  // Can only run after forces have been computed.
+  plugin.needstage = STAGE;
+
+  // Initialization callback.
+  plugin.init = +[](const mjModel *m, mjData *d, int instance) {
+    auto *RayCasterPlugin = RayCasterPlugin::Create(m, d, instance);
+    if (!RayCasterPlugin) {
+      return -1;
+    }
+    d->plugin_data[instance] = reinterpret_cast<uintptr_t>(RayCasterPlugin);
+    return 0;
+  };
+
+  // Destruction callback.
+  plugin.destroy = +[](mjData *d, int instance) {
+    delete reinterpret_cast<RayCasterPlugin *>(d->plugin_data[instance]);
+    d->plugin_data[instance] = 0;
+  };
+
+  // Reset callback.
+  plugin.reset = +[](const mjModel *m, mjtNum *plugin_state, void *plugin_data,
+                     int instance) {
+    auto *RayCasterPlugin =
+        reinterpret_cast<class RayCasterPlugin *>(plugin_data);
+    RayCasterPlugin->Reset(m, instance);
+  };
+
+  // Compute callback.
+  plugin.compute =
+      +[](const mjModel *m, mjData *d, int instance, int capability_bit) {
+        auto *RayCasterPlugin =
+            reinterpret_cast<class RayCasterPlugin *>(d->plugin_data[instance]);
+        RayCasterPlugin->Compute(m, d, instance);
+      };
+
+  // Visualization callback.
+  plugin.visualize = +[](const mjModel *m, mjData *d, const mjvOption *opt,
+                         mjvScene *scn, int instance) {
+    auto *RayCasterPlugin =
+        reinterpret_cast<class RayCasterPlugin *>(d->plugin_data[instance]);
+    RayCasterPlugin->Visualize(m, d, opt, scn, instance);
+  };
+
+  // Register the plugin.
+  mjp_registerPlugin(&plugin);
+}
+
+} // namespace mujoco::plugin::sensor

@@ -12,3 +12,42 @@ joystick_bits: 16 # Some game controllers may only have 8-bit accuracy
 print_scene_information: 1 # Print link, joint and sensors information of robot
 
 enable_elastic_band: 0 # Virtual spring band, used for lifting h1
+
+# ROS2 publishers for StepIt policy_neuro_ros2 subscribers.
+# Build unitree_mujoco with -DENABLE_ROS2=ON to publish these topics.
+enable_ray_array: true   # Publish raycaster sensors as ROS2 topics
+enable_odom: false       # Publish /odom and TF
+enable_gridmap: false    # Convert /height_scan PointCloud2 into /elevation_map GridMap
+
+# External odometry subscriber, optional. When enabled, it can drive the MuJoCo base pose.
+enable_odom_sub: false
+odom_sub_mode: "odom"               # "odom" or "tf"
+odom_sub_topic: "/external_odom"
+odom_sub_tf_source_frame: "world"
+odom_sub_tf_target_frame: "odom"
+
+# Default raycaster output format. Per-sensor settings below override these.
+raycaster_output_format: "pointcloud"  # "pointcloud", "array", or "both"
+raycaster_flatten_xyz: true            # array: true=[x,y,z,...], false=[z,z,...]
+raycaster_zero_mean: false
+
+raycaster_sensors:
+  height_scan:
+    output_format: "both"    # Publishes /height_scan and /height_scan_array
+    flatten_xyz: false       # Go2: 187 values; B2: 221 values
+    zero_mean: true
+    replace_nan: "zero"
+    distance_type: ""        # "", "abs", or "eu"
+  depth_camera:
+    output_format: "array"   # Publishes /depth_camera_array on B2
+    flatten_xyz: false       # B2 depth camera: 64 * 48 = 3072 values
+    zero_mean: false
+    replace_nan: "zero"
+    distance_type: "abs"
+
+# MuJoCo-window depth overlay. Optional and can cost performance.
+enable_depth_visualizer: false
+
+publisher_frequency: 30.0
+depth_visualizer_frequency: 10.0
+depth_visualizer_scale: 2

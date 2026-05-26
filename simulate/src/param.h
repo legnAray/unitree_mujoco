@@ -4,6 +4,8 @@
 #include <boost/program_options.hpp>
 #include <yaml-cpp/yaml.h>
 #include <filesystem>
+#include <map>
+#include <string>
 
 namespace param
 {
@@ -26,6 +28,35 @@ inline struct SimulationConfig
     int enable_elastic_band;
     int band_attached_link = 0;
 
+    bool enable_ray_array = false;
+    bool enable_odom = false;
+    bool enable_odom_sub = false;
+    std::string odom_sub_mode = "odom";
+    std::string odom_sub_topic = "/external_odom";
+    std::string odom_sub_tf_source_frame = "odom";
+    std::string odom_sub_tf_target_frame = "base_link";
+    bool enable_gridmap = false;
+    bool enable_depth_visualizer = false;
+
+    std::string raycaster_output_format = "pointcloud";
+    bool raycaster_flatten_xyz = true;
+    bool raycaster_zero_mean = false;
+
+    struct RaycasterSensorConfig {
+        std::string output_format;
+        bool flatten_xyz = true;
+        bool zero_mean = false;
+        float offset = 0.0f;
+        std::string replace_nan;
+        float max_distance = 10.0f;
+        std::string distance_type;
+    };
+    std::map<std::string, RaycasterSensorConfig> raycaster_sensors;
+
+    double publisher_frequency = 50.0;
+    double depth_visualizer_frequency = 10.0;
+    int depth_visualizer_scale = 2;
+
     void load_from_yaml(const std::string &filename)
     {
         auto cfg = YAML::LoadFile(filename);
@@ -41,6 +72,85 @@ inline struct SimulationConfig
             joystick_bits = cfg["joystick_bits"].as<int>();
             print_scene_information = cfg["print_scene_information"].as<int>();
             enable_elastic_band = cfg["enable_elastic_band"].as<int>();
+
+            if (cfg["enable_ray_array"]) {
+                enable_ray_array = cfg["enable_ray_array"].as<bool>();
+            }
+            if (cfg["enable_odom"]) {
+                enable_odom = cfg["enable_odom"].as<bool>();
+            }
+            if (cfg["enable_odom_sub"]) {
+                enable_odom_sub = cfg["enable_odom_sub"].as<bool>();
+            }
+            if (cfg["odom_sub_mode"]) {
+                odom_sub_mode = cfg["odom_sub_mode"].as<std::string>();
+            }
+            if (cfg["odom_sub_topic"]) {
+                odom_sub_topic = cfg["odom_sub_topic"].as<std::string>();
+            }
+            if (cfg["odom_sub_tf_source_frame"]) {
+                odom_sub_tf_source_frame = cfg["odom_sub_tf_source_frame"].as<std::string>();
+            }
+            if (cfg["odom_sub_tf_target_frame"]) {
+                odom_sub_tf_target_frame = cfg["odom_sub_tf_target_frame"].as<std::string>();
+            }
+            if (cfg["enable_gridmap"]) {
+                enable_gridmap = cfg["enable_gridmap"].as<bool>();
+            }
+            if (cfg["enable_depth_visualizer"]) {
+                enable_depth_visualizer = cfg["enable_depth_visualizer"].as<bool>();
+            }
+            if (cfg["raycaster_output_format"]) {
+                raycaster_output_format = cfg["raycaster_output_format"].as<std::string>();
+            }
+            if (cfg["raycaster_flatten_xyz"]) {
+                raycaster_flatten_xyz = cfg["raycaster_flatten_xyz"].as<bool>();
+            }
+            if (cfg["raycaster_zero_mean"]) {
+                raycaster_zero_mean = cfg["raycaster_zero_mean"].as<bool>();
+            }
+            if (cfg["raycaster_sensors"]) {
+                raycaster_sensors.clear();
+                for (const auto& sensor : cfg["raycaster_sensors"]) {
+                    std::string name = sensor.first.as<std::string>();
+                    RaycasterSensorConfig sensor_cfg;
+
+                    if (sensor.second["output_format"]) {
+                        sensor_cfg.output_format = sensor.second["output_format"].as<std::string>();
+                    }
+                    if (sensor.second["flatten_xyz"]) {
+                        sensor_cfg.flatten_xyz = sensor.second["flatten_xyz"].as<bool>();
+                    }
+                    if (sensor.second["zero_mean"]) {
+                        sensor_cfg.zero_mean = sensor.second["zero_mean"].as<bool>();
+                    }
+                    if (sensor.second["offset"]) {
+                        sensor_cfg.offset = sensor.second["offset"].as<float>();
+                    }
+                    if (sensor.second["replace_nan"]) {
+                        sensor_cfg.replace_nan = sensor.second["replace_nan"].as<std::string>();
+                    }
+                    if (sensor.second["max_distance"]) {
+                        sensor_cfg.max_distance = sensor.second["max_distance"].as<float>();
+                    }
+                    if (sensor.second["distance_type"]) {
+                        sensor_cfg.distance_type = sensor.second["distance_type"].as<std::string>();
+                    }
+
+                    raycaster_sensors[name] = sensor_cfg;
+                }
+            }
+            if (cfg["publisher_frequency"]) {
+                publisher_frequency = cfg["publisher_frequency"].as<double>();
+            }
+            if (cfg["depth_visualizer_frequency"]) {
+                depth_visualizer_frequency = cfg["depth_visualizer_frequency"].as<double>();
+            }
+            if (cfg["depth_visualizer_scale"]) {
+                depth_visualizer_scale = cfg["depth_visualizer_scale"].as<int>();
+                if (depth_visualizer_scale < 1) depth_visualizer_scale = 1;
+                if (depth_visualizer_scale > 4) depth_visualizer_scale = 4;
+            }
         }
         catch(const std::exception& e)
         {

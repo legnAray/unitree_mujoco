@@ -48,6 +48,12 @@
     <mesh name="f_oc_link" file="f_oc_link.obj"/>
     <mesh name="r_oc_link" file="r_oc_link.obj"/>
   </asset>
+
+  <extension>
+    <plugin plugin="mujoco.sensor.ray_caster"/>
+    <plugin plugin="mujoco.sensor.ray_caster_camera"/>
+  </extension>
+
   <worldbody>
     <body name="base_link" pos="0 0 0.8" childclass="b2">
       <inertial pos="0.0212868 0.0045819 0.0106169" quat="0.00178111 0.675412 -0.000262894 0.737438" mass="40.8426" diaginertia="1.73786 1.66448 0.343734"/>
@@ -68,6 +74,8 @@
       <geom pos="0.84158 -0.0134347 -0.0134347" quat="-3.89602e-06 1.29867e-06 0.707107 -0.707107" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="f_oc_link"/>
       <geom pos="-0.00451008 0.0252504 -0.0262476" quat="0.707107 -0.707107 -1.29867e-06 -1.29867e-06" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="r_oc_link"/>
       <site name="imu" pos="0 -0.02341 0.04927"/>
+      <camera name="ray_caster" pos="0.0 0.0 0.5" quat="0.707107 0 0 0.707107"/>
+      <camera name="ray_caster_camera" pos="0.415 0.02 0.05" xyaxes="0 -1 0 0.707 0 0.707" />
       <body name="FL_hip" pos="0.3285 0.072 0">
         <inertial pos="-0.00829923 -0.00998502 0.000235465" quat="0.525168 0.518964 0.477213 0.476595" mass="2.5294" diaginertia="0.00485541 0.00370618 0.00277182"/>
         <joint name="FL_hip_joint" pos="0 0 0" axis="1 0 0" range="-0.87 0.87"/>
@@ -228,6 +236,39 @@
     
     <framepos name="frame_pos" objtype="site" objname="imu" />
     <framelinvel name="frame_vel" objtype="site" objname="imu" />
+
+    <plugin name="depth_camera" plugin="mujoco.sensor.ray_caster_camera" objtype="camera"
+            objname="ray_caster_camera">
+      <config key="focal_length" value="0.00965" />
+      <config key="horizontal_aperture" value="0.01426421959071792" />
+      <config key="size" value="64 48" />
+      <config key="dis_range" value="0.3 3.0" />
+      <config key="vertical_aperture" value="0.010698164693038442" />
+      <config key="compute_time_log" value="0" />
+      <config key="n_step_update" value="5" />
+      <config key="draw_deep_ray_ids" value="0 10 0 0.5 0.5 0.5 0 31 63 3071" />
+      <config key="draw_hip_point" value="1 0.02" />
+      <config key="sensor_data_types" value="pos_b image" />
+      <config key="noise_type" value="uniform" />
+      <config key="noise_cfg" value="-0.1 0.1 1" />
+      <config key="geomgroup" value="1 0 0 0 0 0" />
+    </plugin>
+    <framepos name="depth_camera_pos" objtype="camera" objname="ray_caster_camera"/>
+    <framequat name="depth_camera_quat" objtype="camera" objname="ray_caster_camera"/>
+
+    <plugin name="height_scan" plugin="mujoco.sensor.ray_caster"
+            objtype="camera" objname="ray_caster">
+      <config key="resolution" value="0.1"/>
+      <config key="size" value="1.6 1.2"/>
+      <config key="dis_range" value="0.1 10"/>
+      <config key="type" value="yaw"/>
+      <config key="sensor_data_types" value="pos_b"/>
+      <config key="draw_deep_ray_ids" value="1 10 0.5 0.5 0 0.5 0 5 10 186" />
+      <config key="draw_hip_point" value="1 0.02" />
+      <config key="geomgroup" value="1 0 0 0 0 0" />
+    </plugin>
+    <framepos name="ray_caster_pos" objtype="camera" objname="ray_caster"/>
+    <framequat name="ray_caster_quat" objtype="camera" objname="ray_caster"/>
   </sensor>
 
   <keyframe>

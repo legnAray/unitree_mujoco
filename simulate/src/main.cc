@@ -35,6 +35,16 @@
 #include "unitree_sdk2_bridge.h"
 #include "param.h"
 
+#ifdef ENABLE_ROS2
+#include <rclcpp/rclcpp.hpp>
+#include "gridmap_publisher.h"
+#include "odom_publisher.h"
+#include "odom_subscriber.h"
+#include "raycaster_publisher.h"
+#endif
+
+#include "depth_image_visualizer.h"
+
 #define MUJOCO_PLUGIN_DIR "mujoco_plugin"
 #define NUM_MOTOR_IDL_GO 20
 
@@ -102,6 +112,21 @@ namespace
 
   // control noise variables
   mjtNum *ctrlnoise = nullptr;
+
+#ifdef ENABLE_ROS2
+  std::shared_ptr<RaycasterPublisher> raycaster_publisher = nullptr;
+  std::shared_ptr<GridMapPublisher> gridmap_publisher = nullptr;
+  std::shared_ptr<OdomPublisher> odom_publisher = nullptr;
+  rclcpp::Node::SharedPtr raycaster_node = nullptr;
+  rclcpp::Node::SharedPtr odom_node = nullptr;
+
+  std::shared_ptr<OdomSubscriber> odom_subscriber = nullptr;
+  rclcpp::Node::SharedPtr odom_sub_node = nullptr;
+#endif
+
+  std::unique_ptr<DepthImageVisualizer> depth_visualizer = nullptr;
+  double last_publisher_time = 0.0;
+  double last_depth_visualizer_time = 0.0;
 
   using Seconds = std::chrono::duration<double>;
 
@@ -361,6 +386,24 @@ namespace
           free(ctrlnoise);
           ctrlnoise = (mjtNum *)malloc(sizeof(mjtNum) * m->nu);
           mju_zero(ctrlnoise, m->nu);
+
+#ifdef ENABLE_ROS2
+          if (raycaster_node && raycaster_publisher) {
+            raycaster_publisher->initialize(m, d);
+          }
+          if (odom_node && odom_publisher) {
+            odom_publisher->initialize(m, d);
+          }
+          if (odom_sub_node && odom_subscriber) {
+            odom_subscriber->initialize(m, d);
+          }
+#endif
+          if (param::config.enable_depth_visualizer) {
+            if (!depth_visualizer) {
+              depth_visualizer = std::make_unique<DepthImageVisualizer>(param::config.depth_visualizer_scale);
+            }
+            depth_visualizer->initialize(m, d, &sim);
+          }
         }
         else
         {
@@ -391,6 +434,24 @@ namespace
           free(ctrlnoise);
           ctrlnoise = static_cast<mjtNum *>(malloc(sizeof(mjtNum) * m->nu));
           mju_zero(ctrlnoise, m->nu);
+
+#ifdef ENABLE_ROS2
+          if (raycaster_node && raycaster_publisher) {
+            raycaster_publisher->initialize(m, d);
+          }
+          if (odom_node && odom_publisher) {
+            odom_publisher->initialize(m, d);
+          }
+          if (odom_sub_node && odom_subscriber) {
+            odom_subscriber->initialize(m, d);
+          }
+#endif
+          if (param::config.enable_depth_visualizer) {
+            if (!depth_visualizer) {
+              depth_visualizer = std::make_unique<DepthImageVisualizer>(param::config.depth_visualizer_scale);
+            }
+            depth_visualizer->initialize(m, d, &sim);
+          }
         }
         else
         {
@@ -506,6 +567,37 @@ namespace
                 mj_step(m, d);
                 stepped = true;
 
+#ifdef ENABLE_ROS2
+                if (odom_subscriber && odom_subscriber->isEnabled()) {
+                  odom_subscriber->applyToSimulation(m, d);
+                }
+
+                double publisher_interval = 1.0 / param::config.publisher_frequency;
+                if (raycaster_node && (d->time - last_publisher_time) >= publisher_interval) {
+                  if (raycaster_publisher) {
+                    raycaster_publisher->publish(m, d);
+                  }
+                  if (odom_publisher) {
+                    odom_publisher->publish(m, d);
+                  }
+                  last_publisher_time = d->time;
+                }
+                if (raycaster_node) {
+                  rclcpp::spin_some(raycaster_node);
+                }
+                if (odom_node) {
+                  rclcpp::spin_some(odom_node);
+                }
+                if (odom_sub_node) {
+                  rclcpp::spin_some(odom_sub_node);
+                }
+#endif
+                double depth_interval = 1.0 / param::config.depth_visualizer_frequency;
+                if (depth_visualizer && (d->time - last_depth_visualizer_time) >= depth_interval) {
+                  depth_visualizer->update_and_render(d);
+                  last_depth_visualizer_time = d->time;
+                }
+
                 // break if reset
                 if (d->time < prevSim)
                 {
@@ -554,6 +646,24 @@ void PhysicsThread(mj::Simulate *sim, const char *filename)
       free(ctrlnoise);
       ctrlnoise = static_cast<mjtNum *>(malloc(sizeof(mjtNum) * m->nu));
       mju_zero(ctrlnoise, m->nu);
+
+#ifdef ENABLE_ROS2
+      if (raycaster_node && raycaster_publisher) {
+        raycaster_publisher->initialize(m, d);
+      }
+      if (odom_node && odom_publisher) {
+        odom_publisher->initialize(m, d);
+      }
+      if (odom_sub_node && odom_subscriber) {
+        odom_subscriber->initialize(m, d);
+      }
+#endif
+      if (param::config.enable_depth_visualizer) {
+        if (!depth_visualizer) {
+          depth_visualizer = std::make_unique<DepthImageVisualizer>(param::config.depth_visualizer_scale);
+        }
+        depth_visualizer->initialize(m, d, sim);
+      }
     }
     else
     {
@@ -567,6 +677,12 @@ void PhysicsThread(mj::Simulate *sim, const char *filename)
   free(ctrlnoise);
   mj_deleteData(d);
   mj_deleteModel(m);
+
+#ifdef ENABLE_ROS2
+  if (raycaster_node || odom_node || odom_sub_node) {
+    rclcpp::shutdown();
+  }
+#endif
 
   exit(0);
 }
@@ -676,6 +792,75 @@ int main(int argc, char **argv)
   if(param::config.robot_scene.is_relative()) {
     param::config.robot_scene = proj_dir.parent_path() / "unitree_robots" / param::config.robot / param::config.robot_scene;
   }
+
+#ifdef ENABLE_ROS2
+  rclcpp::init(0, nullptr);
+  raycaster_node = std::make_shared<rclcpp::Node>("raycaster_publisher");
+
+  if (param::config.enable_ray_array) {
+    RaycasterPublisher::OutputFormat format = RaycasterPublisher::OutputFormat::POINTCLOUD;
+    if (param::config.raycaster_output_format == "array") {
+      format = RaycasterPublisher::OutputFormat::ARRAY;
+    } else if (param::config.raycaster_output_format == "both") {
+      format = RaycasterPublisher::OutputFormat::BOTH;
+    }
+
+    raycaster_publisher = std::make_shared<RaycasterPublisher>(
+      raycaster_node, format, param::config.raycaster_flatten_xyz, param::config.raycaster_zero_mean);
+
+    std::printf("ROS2 raycaster publisher initialized (format=%s, flatten_xyz=%s, zero_mean=%s)\n",
+                param::config.raycaster_output_format.c_str(),
+                param::config.raycaster_flatten_xyz ? "true" : "false",
+                param::config.raycaster_zero_mean ? "true" : "false");
+  } else {
+    std::printf("ROS2 raycaster publisher disabled (set enable_ray_array: true in config.yaml to enable)\n");
+  }
+
+  if (param::config.enable_gridmap) {
+    gridmap_publisher = std::make_shared<GridMapPublisher>(raycaster_node, "/height_scan", "/elevation_map");
+    if (gridmap_publisher->isEnabled()) {
+      std::printf("ROS2 gridmap publisher initialized\n");
+    }
+  } else {
+    std::printf("ROS2 gridmap publisher disabled (set enable_gridmap: true in config.yaml to enable)\n");
+  }
+
+  if (param::config.enable_odom) {
+    odom_node = std::make_shared<rclcpp::Node>("odom_publisher");
+    odom_publisher = std::make_shared<OdomPublisher>(odom_node, "base", "/odom");
+    if (odom_publisher->isEnabled()) {
+      std::printf("ROS2 odometry publisher initialized\n");
+    }
+  } else {
+    std::printf("ROS2 odometry publisher disabled (set enable_odom: true in config.yaml to enable)\n");
+  }
+
+  if (param::config.enable_odom_sub) {
+    odom_sub_node = std::make_shared<rclcpp::Node>("odom_subscriber");
+    odom_subscriber = std::make_shared<OdomSubscriber>(
+      odom_sub_node,
+      "base",
+      true,
+      param::config.odom_sub_mode,
+      param::config.odom_sub_topic,
+      param::config.odom_sub_tf_source_frame,
+      param::config.odom_sub_tf_target_frame
+    );
+    if (odom_subscriber->isEnabled()) {
+      std::printf("ROS2 odometry subscriber initialized\n");
+      std::printf("  Mode: %s\n", param::config.odom_sub_mode.c_str());
+      if (param::config.odom_sub_mode == "odom") {
+        std::printf("  Topic: %s\n", param::config.odom_sub_topic.c_str());
+      } else {
+        std::printf("  TF: %s -> %s\n",
+                    param::config.odom_sub_tf_source_frame.c_str(),
+                    param::config.odom_sub_tf_target_frame.c_str());
+      }
+    }
+  } else {
+    std::printf("ROS2 odometry subscriber disabled (set enable_odom_sub: true in config.yaml to enable)\n");
+  }
+#endif
 
   // simulate object encapsulates the UI
   auto sim = std::make_unique<mj::Simulate>(
