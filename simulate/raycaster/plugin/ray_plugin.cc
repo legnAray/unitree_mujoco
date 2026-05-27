@@ -24,6 +24,102 @@
 
 namespace mujoco::plugin::sensor {
 
+namespace {
+
+std::string NormalizeSensorName(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+    if (c == '-' || c == '.') {
+      return '_';
+    }
+    return static_cast<char>(std::tolower(c));
+  });
+  return value;
+}
+
+std::vector<std::string> SplitSensorList(const char *value) {
+  std::vector<std::string> tokens;
+  if (value == nullptr) {
+    return tokens;
+  }
+
+  std::string current;
+  for (const char c : std::string(value)) {
+    if (std::isspace(static_cast<unsigned char>(c)) || c == ',' || c == ';') {
+      if (!current.empty()) {
+        tokens.push_back(NormalizeSensorName(current));
+        current.clear();
+      }
+    } else {
+      current.push_back(c);
+    }
+  }
+  if (!current.empty()) {
+    tokens.push_back(NormalizeSensorName(current));
+  }
+  return tokens;
+}
+
+bool TokenMatchesSensor(const std::string &token, const std::string &name) {
+  const std::string normalized_name = NormalizeSensorName(name);
+  if (token == normalized_name) {
+    return true;
+  }
+  if (normalized_name == "height_scan" &&
+      (token == "heightmap" || token == "height_map" ||
+       token == "heightscan")) {
+    return true;
+  }
+  if (normalized_name == "depth_camera" &&
+      (token == "depth" || token == "depthcamera")) {
+    return true;
+  }
+  return false;
+}
+
+bool SensorListContains(const char *value, const std::string &name) {
+  for (const auto &token : SplitSensorList(value)) {
+    if (TokenMatchesSensor(token, name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool SensorListDisables(const char *value) {
+  for (const auto &token : SplitSensorList(value)) {
+    if (token == "0" || token == "false" || token == "off" ||
+        token == "none") {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool BoolConfig(const mjModel *m, int instance, const char *key,
+                bool default_value) {
+  const char *config = mj_getPluginConfig(m, instance, key);
+  if (config == nullptr || config[0] == '\0') {
+    return default_value;
+  }
+
+  char *end = nullptr;
+  const double value = std::strtod(config, &end);
+  if (end != config) {
+    return value != 0.0;
+  }
+
+  const std::string token = NormalizeSensorName(config);
+  if (token == "true" || token == "on" || token == "yes") {
+    return true;
+  }
+  if (token == "false" || token == "off" || token == "no") {
+    return false;
+  }
+  return default_value;
+}
+
+} // namespace
+
 // Checks that a plugin config attribute exists.
 bool CheckAttr(const std::string &input) {
   char *end;
@@ -68,6 +164,33 @@ int computeDateSize(const mjModel *m, int instance, int nray) {
   return n_data;
 }
 
+bool RaycasterSensorEnabled(const mjModel *m, int instance,
+                            const std::string &name) {
+  bool result = BoolConfig(m, instance, "enabled", true);
+  const char *enable_env = std::getenv("UNITREE_MUJOCO_RAYCASTER_ENABLE");
+  if (SensorListDisables(enable_env)) {
+    result = false;
+  }
+  if (SensorListContains(enable_env, name)) {
+    result = true;
+  }
+  return result;
+}
+
+bool RaycasterSensorVisualizeEnabled(const mjModel *m, int instance,
+                                     const std::string &name) {
+  bool result = BoolConfig(m, instance, "visualize", true);
+  const char *visualize_env =
+      std::getenv("UNITREE_MUJOCO_RAYCASTER_VISUALIZE");
+  if (SensorListDisables(visualize_env)) {
+    result = false;
+  }
+  if (SensorListContains(visualize_env, name)) {
+    result = true;
+  }
+  return result;
+}
+
 RayPlugin::RayPlugin() {
   vis_cfg = VisCfg();
   ray_caster = nullptr;
@@ -78,6 +201,9 @@ RayPlugin::RayPlugin() {
 void RayPlugin::Reset(const mjModel *m, int instance) {}
 
 void RayPlugin::Compute(const mjModel *m, mjData *d, int instance) {
+  if (!enabled)
+    return;
+
   n_step++;
   if (n_step < n_step_update)
     return;
@@ -113,6 +239,9 @@ void RayPlugin::getBaseCfg(const mjModel *m, mjData *d, int instance) {
   }
   sensor_id = id;
   name = std::string(m->names + m->name_sensoradr[sensor_id]);
+  enabled = RaycasterSensorEnabled(m, instance, name);
+  visualize_enabled =
+      enabled && RaycasterSensorVisualizeEnabled(m, instance, name);
   if (m->sensor_objtype[sensor_id] != mjOBJ_CAMERA) {
     mju_error("%s:the sensor objtype is err,must be camera", name.c_str());
   }
@@ -329,6 +458,9 @@ void RayPlugin::initSensor(const mjModel *m, mjData *d, int instance,
 
 void RayPlugin::Visualize(const mjModel *m, mjData *d, const mjvOption *opt,
                           mjvScene *scn, int instance) {
+  if (!enabled || !visualize_enabled)
+    return;
+
   mj_markStack(d);
 
   if (vis_cfg.deep_ray.is_draw)

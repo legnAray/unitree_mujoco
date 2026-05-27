@@ -19,6 +19,8 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
+#include <cstdlib>
 
 class RaycasterPublisher {
 public:
@@ -71,6 +73,12 @@ public:
                 sensor.data_adr = m->sensor_adr[i];
                 sensor.plugin_id = plugin_id;
                 sensor.state_adr = m->plugin_stateadr[plugin_id];
+
+                if (!raycaster_sensor_enabled(m, plugin_id, sensor.name)) {
+                    RCLCPP_INFO(node_->get_logger(),
+                        "Skipping disabled raycaster sensor: %s", sensor.name.c_str());
+                    continue;
+                }
                 
                 // Get the object name that this sensor is attached to
                 // This is used to find corresponding pos/quat sensors
@@ -351,6 +359,105 @@ private:
             return SensorDataType::DISTANCE_1D;
         }
         return SensorDataType::DISTANCE_1D; // default
+    }
+
+    static std::string normalize_sensor_name(std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            if (c == '-' || c == '.') {
+                return '_';
+            }
+            return static_cast<char>(std::tolower(c));
+        });
+        return value;
+    }
+
+    static std::vector<std::string> split_sensor_list(const char* value) {
+        std::vector<std::string> tokens;
+        if (!value) return tokens;
+
+        std::string current;
+        for (const char c : std::string(value)) {
+            if (std::isspace(static_cast<unsigned char>(c)) || c == ',' || c == ';') {
+                if (!current.empty()) {
+                    tokens.push_back(normalize_sensor_name(current));
+                    current.clear();
+                }
+            } else {
+                current.push_back(c);
+            }
+        }
+        if (!current.empty()) {
+            tokens.push_back(normalize_sensor_name(current));
+        }
+        return tokens;
+    }
+
+    static bool token_matches_sensor(const std::string& token, const std::string& name) {
+        const std::string normalized_name = normalize_sensor_name(name);
+        if (token == normalized_name) {
+            return true;
+        }
+        if (normalized_name == "height_scan" &&
+            (token == "heightmap" || token == "height_map" || token == "heightscan")) {
+            return true;
+        }
+        if (normalized_name == "depth_camera" &&
+            (token == "depth" || token == "depthcamera")) {
+            return true;
+        }
+        return false;
+    }
+
+    static bool sensor_list_contains(const char* value, const std::string& name) {
+        for (const auto& token : split_sensor_list(value)) {
+            if (token_matches_sensor(token, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static bool sensor_list_disables(const char* value) {
+        for (const auto& token : split_sensor_list(value)) {
+            if (token == "0" || token == "false" || token == "off" || token == "none") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static bool bool_plugin_config(mjModel* m, int plugin_id, const char* key, bool default_value) {
+        const char* config = mj_getPluginConfig(m, plugin_id, key);
+        if (!config || config[0] == '\0') {
+            return default_value;
+        }
+
+        char* end = nullptr;
+        const double value = std::strtod(config, &end);
+        if (end != config) {
+            return value != 0.0;
+        }
+
+        const std::string token = normalize_sensor_name(config);
+        if (token == "true" || token == "on" || token == "yes") {
+            return true;
+        }
+        if (token == "false" || token == "off" || token == "no") {
+            return false;
+        }
+        return default_value;
+    }
+
+    static bool raycaster_sensor_enabled(mjModel* m, int plugin_id, const std::string& name) {
+        bool enabled = bool_plugin_config(m, plugin_id, "enabled", true);
+        const char* enable_env = std::getenv("UNITREE_MUJOCO_RAYCASTER_ENABLE");
+        if (sensor_list_disables(enable_env)) {
+            enabled = false;
+        }
+        if (sensor_list_contains(enable_env, name)) {
+            enabled = true;
+        }
+        return enabled;
     }
     
     struct RayCasterSensor {

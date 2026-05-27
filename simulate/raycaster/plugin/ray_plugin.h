@@ -27,6 +27,12 @@ std::vector<std::string> ReadStringVector(const std::string &input);
 
 int computeDateSize(const mjModel *m, int instance, int nray);
 
+bool RaycasterSensorEnabled(const mjModel *m, int instance,
+                            const std::string &name);
+
+bool RaycasterSensorVisualizeEnabled(const mjModel *m, int instance,
+                                     const std::string &name);
+
 // Converts a string into a numeric vector
 template <typename T> std::vector<T> ReadVector(const std::string &input) {
   std::vector<T> output;
@@ -215,15 +221,18 @@ public:
   int n_sensor_data;
   int sensor_id;
   bool compute_time_log = false;
+  bool enabled = true;
+  bool visualize_enabled = true;
   int n_step_update = 1;
   int n_step = 0;
   std::string name;
   std::chrono::high_resolution_clock::time_point start;
-  static constexpr std::array<const char *, 12> base_attributes = {
+  static constexpr std::array<const char *, 14> base_attributes = {
       "draw_deep_ray",  "draw_deep_ray_ids", "draw_deep",
       "draw_hip_point", "sensor_data_types", "noise_type",
       "noise_cfg",      "geomgroup",         "detect_parentbody",
-      "compute_time_log",   "n_step_update",     "num_thread"};
+      "compute_time_log",   "n_step_update",     "num_thread",
+      "enabled",        "visualize"};
   std::vector<std::pair<std::string_view, int>> noise_attributes = {
       {"uniform", 3}, {"gaussian", 3}, {"noise1", 4}, {"noise2", 8}};
   /*--------通用接口--------*/
