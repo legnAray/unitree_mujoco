@@ -106,6 +106,12 @@ namespace
   const double simRefreshFraction = 0.7; // fraction of refresh available for simulation
   const int kErrorLength = 1024;         // load error string length
 
+  bool UsesHgLowLevelIdl(const std::string &robot)
+  {
+    return robot.find("a2") != std::string::npos ||
+           robot.find("g1") != std::string::npos;
+  }
+
   // model and data
   mjModel *m = nullptr;
   mjData *d = nullptr;
@@ -710,7 +716,7 @@ void *UnitreeSdk2BridgeThread(void *arg)
   param::config.band_attached_link = 6 * body_id;
 
   std::unique_ptr<UnitreeSDK2BridgeBase> interface = nullptr;
-  if (m->nu > NUM_MOTOR_IDL_GO) {
+  if (UsesHgLowLevelIdl(robot) || m->nu > NUM_MOTOR_IDL_GO) {
     interface = std::make_unique<G1Bridge>(m, d);
   } else {
     interface = std::make_unique<Go2Bridge>(m, d);
