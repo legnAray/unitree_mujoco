@@ -34,6 +34,7 @@ if(ENABLE_ROS2)
 endif()
 
 include_directories(
+  /usr/local/include/iceoryx/v2.0.2
   mujoco/include
   mujoco/simulate
   src/lodepng

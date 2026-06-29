@@ -1,5 +1,5 @@
 <mujoco model="a2">
-  <compiler angle="radian" meshdir="meshes/" autolimits="true"/>
+  <compiler angle="radian" meshdir="meshes/"/>
   <option gravity="0 0 -9.81"/>
 
   <default>
@@ -16,8 +16,8 @@
         <geom group="3" priority="1" condim="6"/>
       </default>
       <default class="foot">
-<!--           <geom group="3" priority="1" condim="6" friction="0.3 0.01 0.01"/> -->
-          <geom group="3" priority="1" condim="6"/>
+          <geom group="3" priority="1" condim="6" friction="1.3 0.01 0.01"/>
+<!--           <geom group="3" priority="1" condim="6"/> -->
       </default>
   </default>
 
@@ -42,7 +42,7 @@
   </asset>
 
   <worldbody>
-    <body name="base_link" pos="0 0 0.7">
+    <body name="base_link" pos="-1 1 0.7">
       <inertial pos="0.00698259 -0.000712858 0.0128895" quat="-0.00152907 0.699583 -0.00252986 0.714546" mass="19.651" diaginertia="0.472398 0.407723 0.141627"/>
       <joint name="floating_base_joint" type="free" limited="false" actuatorfrclimited="false"/>
       <site name="imu" pos="-0.0 0 0.0" />
