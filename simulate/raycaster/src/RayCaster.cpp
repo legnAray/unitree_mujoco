@@ -73,6 +73,9 @@ void RayCaster::_init(const mjModel *m, mjData *d, std::string cam_name,
 
   pos = d->cam_xpos + cam_id * 3;
   mat = d->cam_xmat + cam_id * 9;
+  cam_body_id = m->cam_bodyid[cam_id];
+  body_pos = d->xpos + cam_body_id * 3;
+  cam_local_pos = m->cam_pos + cam_id * 3;
 
   if (type == RayCasterType::none) {
     is_offert = false;
@@ -160,10 +163,30 @@ void RayCaster::setNoise(ray_noise::RayNoise3 noise) {
 }
 #endif
 
+void RayCaster::compute_ray_origin() {
+  ray_origin[0] = pos[0];
+  ray_origin[1] = pos[1];
+  ray_origin[2] = pos[2];
+
+  if (type != RayCasterType::yaw || body_pos == nullptr ||
+      cam_local_pos == nullptr) {
+    return;
+  }
+
+  // In yaw mode, keep the ray grid level with the world: follow body x/y/yaw
+  // and camera height, but ignore body pitch/roll.
+  mjtNum c = cos(yaw);
+  mjtNum s = sin(yaw);
+  ray_origin[0] = body_pos[0] + c * cam_local_pos[0] - s * cam_local_pos[1];
+  ray_origin[1] = body_pos[1] + s * cam_local_pos[0] + c * cam_local_pos[1];
+  ray_origin[2] = body_pos[2] + cam_local_pos[2];
+}
+
 void RayCaster::compute_ray_vec() {
   if (is_offert) {
     yaw = atan2(mat[3], mat[0]);
   }
+  compute_ray_origin();
   for (int i = 0; i < v_ray_num; i++) {
     for (int j = 0; j < h_ray_num; j++) {
       int idx = _get_idx(i, j) * 3;
@@ -229,7 +252,7 @@ void RayCaster::create_rays() {
 void RayCaster::compute_ray(int start, int end) {
   int geomid[1];
   for (int i = start; i < end; i++) {
-    mjtNum pnt[3] = {pos[0], pos[1], pos[2]};
+    mjtNum pnt[3] = {ray_origin[0], ray_origin[1], ray_origin[2]};
     if (is_offert) {
       pnt[0] += ray_vec_offset[i * 3];
       pnt[1] += ray_vec_offset[i * 3 + 1];
@@ -347,8 +370,8 @@ void RayCaster::draw_geom(mjvScene *scn, int type, mjtNum *size, mjtNum *pos,
 
 void RayCaster::draw_ary(int idx, int width, float *color, mjvScene *scn,
                          bool is_scale) {
-  mjtNum start[3] = {pos[0], pos[1], pos[2]};
-  mjtNum end[3] = {pos[0], pos[1], pos[2]};
+  mjtNum start[3] = {ray_origin[0], ray_origin[1], ray_origin[2]};
+  mjtNum end[3] = {ray_origin[0], ray_origin[1], ray_origin[2]};
   if (is_offert) {
     start[0] = end[0] += ray_vec_offset[idx * 3];
     start[1] = end[1] += ray_vec_offset[idx * 3 + 1];
@@ -401,8 +424,8 @@ void RayCaster::draw_deep_ray(mjvScene *scn, int idx, int width, float *color) {
     color_[2] = color[2];
     color_[3] = color[3];
   }
-  mjtNum start[3] = {pos[0], pos[1], pos[2]};
-  mjtNum end[3] = {pos[0], pos[1], pos[2]};
+  mjtNum start[3] = {ray_origin[0], ray_origin[1], ray_origin[2]};
+  mjtNum end[3] = {ray_origin[0], ray_origin[1], ray_origin[2]};
   if (is_offert) {
     start[0] = end[0] += ray_vec_offset[idx * 3];
     start[1] = end[1] += ray_vec_offset[idx * 3 + 1];
@@ -467,9 +490,9 @@ void RayCaster::compute_hit() {
         pos_w[data_pos] = pos_w[data_pos + 1] = pos_w[data_pos + 2] = NAN;
         continue;
       }
-      pos_w[data_pos] = pos[0];
-      pos_w[data_pos + 1] = pos[1];
-      pos_w[data_pos + 2] = pos[2];
+      pos_w[data_pos] = ray_origin[0];
+      pos_w[data_pos + 1] = ray_origin[1];
+      pos_w[data_pos + 2] = ray_origin[2];
       if (is_offert) {
         pos_w[data_pos] += ray_vec_offset[data_pos];
         pos_w[data_pos + 1] += ray_vec_offset[data_pos + 1];

@@ -128,6 +128,10 @@ public:
   int cam_id;  // 相机id
   mjtNum *pos; // 相机位置
   mjtNum *mat; // 相机的旋转矩阵
+  int cam_body_id = -1;
+  const mjtNum *body_pos = nullptr;
+  const mjtNum *cam_local_pos = nullptr;
+  mjtNum ray_origin[3] = {0.0, 0.0, 0.0};
   mjtNum yaw = 0.0;
   int h_ray_num = 50; // 水平
   int v_ray_num = 50; // 垂直
@@ -150,6 +154,7 @@ public:
   bool iteration_order_height_first = true;  // true: height_width (default), false: width_height
 
   int _get_idx(int h, int v);
+  void compute_ray_origin();
   // 将ray从相机坐标系转换到世界坐标系
   void compute_ray_vec();
 

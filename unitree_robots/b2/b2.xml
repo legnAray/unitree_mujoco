@@ -74,7 +74,7 @@
       <geom pos="0.84158 -0.0134347 -0.0134347" quat="-3.89602e-06 1.29867e-06 0.707107 -0.707107" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="f_oc_link"/>
       <geom pos="-0.00451008 0.0252504 -0.0262476" quat="0.707107 -0.707107 -1.29867e-06 -1.29867e-06" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0 0 0 1" mesh="r_oc_link"/>
       <site name="imu" pos="0 -0.02341 0.04927"/>
-      <camera name="ray_caster" pos="0.0 0.0 0.5" quat="0.707107 0 0 0.707107"/>
+      <camera name="ray_caster" pos="0.0 0.0 1.0" quat="0.707107 0 0 0.707107"/>
       <camera name="ray_caster_camera" pos="0.415 0.02 0.05" xyaxes="0 -1 0 0.707 0 0.707" />
       <body name="FL_hip" pos="0.3285 0.072 0">
         <inertial pos="-0.00829923 -0.00998502 0.000235465" quat="0.525168 0.518964 0.477213 0.476595" mass="2.5294" diaginertia="0.00485541 0.00370618 0.00277182"/>
